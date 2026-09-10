@@ -1,0 +1,31 @@
+// Run: NODE_PATH=<directory containing playwright> node tests/ui-smoke.cjs /path/to/chrome
+const {chromium}=require('playwright');
+const fs=require('fs'),http=require('http'),path=require('path'),assert=require('assert');
+(async()=>{
+ const dir=path.resolve(__dirname,'../app/src/main/assets');
+ const server=http.createServer((req,res)=>{const name=req.url==='/'?'index.html':req.url.slice(1);if(!['index.html','reader.js','reader.css'].includes(name)){res.writeHead(404).end();return;}res.setHeader('Content-Type',name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(path.join(dir,name)));}).listen(0,'127.0.0.1');
+ await new Promise(r=>server.once('listening',r));
+ const browser=await chromium.launch({...(process.argv[2]?{executablePath:process.argv[2]}:{}),headless:true,args:['--no-sandbox']});
+ const page=await browser.newPage({viewport:{width:1280,height:800}});const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+ await page.addInitScript(()=>{window.__says=[];window.Reader={state:()=>localStorage.getItem('testState')||'{}',save:s=>localStorage.setItem('testState',s),catalog:()=> '[]',stop:()=>{},say:(...a)=>window.__says.push(a),pick:()=>{},speechSettings:()=>{},open:()=>{},remove:()=>{},pdf:()=>{}};});
+ await page.goto('http://127.0.0.1:'+server.address().port);await page.locator('article p').first().waitFor();
+ assert.equal(await page.locator('#bookTitle').innerText(),'한 문장에 머무르는 시간');
+ assert(await page.locator('#sidebar').isVisible());
+ await page.screenshot({path:path.resolve(__dirname,'../docs/tablet-landscape.png')});
+ await page.locator('article p[data-index="2"]').click();await page.locator('#bookmarkBtn').click();assert.equal(await page.locator('#bookmarkBtn').innerText(),'★');
+ await page.locator('#play').click();assert.equal(await page.evaluate(()=>window.__says.at(-1)[0]),'제1장. 나의 속도로 읽기');
+ await page.evaluate(()=>window.nativeEvent('spoken',window.__says.at(-1)[1]));assert.equal(await page.locator('#location').innerText(),'4 / 11 문단');
+ await page.locator('#play').click();await page.evaluate(()=>window.nativeEvent('spoken',window.__says[0][1]));assert.equal(await page.locator('#location').innerText(),'4 / 11 문단');
+ await page.locator('#searchBtn').click();await page.locator('#query').fill('첫 숟가락');assert.match(await page.locator('#searchCount').innerText(),/1개/);await page.locator('#results button').click();assert.equal(await page.locator('#location').innerText(),'8 / 11 문단');
+ await page.locator('#settingBtn').click();await page.locator('#theme').selectOption('dark');await page.locator('#dictionaryBtn').click();await page.locator('#dictionaryText').fill('약선=약썬\nTTS=티티에스');await page.locator('#dictionarySave').click();await page.locator('[data-close=settings]').click();
+ await page.reload();await page.locator('article p').first().waitFor();assert.equal(await page.locator('body').getAttribute('data-theme'),'dark');assert.equal(await page.locator('#location').innerText(),'8 / 11 문단');assert.match(await page.evaluate(()=>localStorage.getItem('testState')),/약썬/);
+ await page.setViewportSize({width:800,height:1280});await page.waitForTimeout(200);assert(!(await page.locator('#sidebar').isVisible()));await page.locator('#shelfToggle').click();assert(await page.locator('#sidebar').isVisible());await page.locator('#shelfToggle').click();
+ await page.locator('#settingBtn').click();await page.locator('#theme').selectOption('sepia');await page.locator('[data-close=settings]').click();await page.screenshot({path:path.resolve(__dirname,'../docs/tablet-portrait.png')});
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ const fixture={id:'11111111-1111-1111-1111-111111111111',title:'긴 책 검증',type:'txt',paragraphs:Array.from({length:120},(_,i)=>'문단 '+i+' <img src=x onerror=alert(1)>'),chapters:[{title:'본문',index:0}],pages:[],pageCount:0};
+ await page.evaluate(b=>nativeEvent('book',JSON.stringify(b)),fixture);assert.equal(await page.locator('article img').count(),0);
+ await page.locator('#progress').evaluate(e=>{e.value=78;e.dispatchEvent(new Event('input'));});assert.equal(await page.locator('#location').innerText(),'79 / 120 문단');assert.equal(await page.locator('article p').count(),50);
+ assert.equal(errors.length,0,errors.join('\n'));
+ console.log('PASS: landscape/portrait layout; bookmarks; speech progression and stale callbacks; search navigation; persisted location/theme/dictionary; long-book windows; text injection safety.');
+ await browser.close();server.close();
+})().catch(e=>{console.error(e);process.exit(1);});

@@ -35,7 +35,7 @@ Android 태블릿에서 TXT·EPUB·PDF·DOCX를 기기에 보관하고 한국어
 JDK 17, Android SDK 35, Gradle 8.9:
 
 ```sh
-./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+gradle :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 ```
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`.

@@ -18,7 +18,7 @@ public final class BookParser {
     }
     static Document xml(byte[] bytes) throws Exception {
         DocumentBuilderFactory f=DocumentBuilderFactory.newInstance(); f.setNamespaceAware(true);
-        String raw=new String(bytes,java.nio.charset.StandardCharsets.UTF_8).toUpperCase(Locale.ROOT);
+        String raw=TextTools.decode(bytes).replace("\u0000", "").toUpperCase(Locale.ROOT);
         if(raw.contains("<!DOCTYPE") || raw.contains("<!ENTITY")) throw new IOException("DTD가 포함된 문서는 지원하지 않습니다.");
         DocumentBuilder builder=f.newDocumentBuilder();
         builder.setEntityResolver((a,b)->new org.xml.sax.InputSource(new StringReader("")));

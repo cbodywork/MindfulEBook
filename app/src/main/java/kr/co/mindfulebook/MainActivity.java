@@ -81,7 +81,7 @@ public class MainActivity extends Activity {
                     float ratio=Math.min(1600f/p.getWidth(),2200f/p.getHeight());int w=Math.max(1,(int)(p.getWidth()*ratio)),h=Math.max(1,(int)(p.getHeight()*ratio));
                     Bitmap bitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);bitmap.eraseColor(Color.WHITE);p.render(bitmap,null,null,PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
                     ByteArrayOutputStream out=new ByteArrayOutputStream();bitmap.compress(Bitmap.CompressFormat.PNG,100,out);bitmap.recycle();
-                    emit("pdf",new JSONObject().put("id",id).put("page",page).put("image","data:image/png;base64,"+Base64.encodeToString(out.toByteArray(),Base64.NO_WRAP)).toString());
+                    emit("pdf",new JSONObject().put("id",id).put("page",page).put("image","data:image/png;base64,"+android.util.Base64.encodeToString(out.toByteArray(),android.util.Base64.NO_WRAP)).toString());
                 }
             }catch(Exception e){emit("error","PDF 원본을 표시할 수 없습니다: "+e.getMessage());}
         });}
