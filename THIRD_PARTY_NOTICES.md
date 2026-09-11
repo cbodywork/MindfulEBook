@@ -6,7 +6,7 @@ https://github.com/TomRoush/PdfBox-Android
 
 Android port by Tom Roush of Apache PDFBox. Licensed under Apache License, Version 2.0.
 Apache PDFBox includes work developed by The Apache Software Foundation (https://www.apache.org/).
-The dependency's LICENSE and NOTICE resources are retained under their packaged names where available.
+The upstream LICENSE and NOTICE texts are bundled in app assets as PDFBOX_LICENSE.txt and PDFBOX_NOTICE.txt.
 
 License text: https://www.apache.org/licenses/LICENSE-2.0
 
