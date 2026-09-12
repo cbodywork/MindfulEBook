@@ -25,7 +25,8 @@ public class MainActivity extends Activity {
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final Handler main=new Handler(Looper.getMainLooper());
     private File books; private AudioManager audio; private AudioFocusRequest focus;
-    private String voiceMessage="한국어 음성 확인 중…";
+    private String voiceMessage="한국어 음성 확인 중…"; private boolean returningFromSpeechSettings=false;
+    private final BroadcastReceiver noisyReceiver=new BroadcastReceiver(){@Override public void onReceive(Context context,Intent intent){if(AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction()))pause();}};
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved); books=new File(getFilesDir(),"books");books.mkdirs();PDFBoxResourceLoader.init(getApplicationContext());
         audio=(AudioManager)getSystemService(AUDIO_SERVICE);
@@ -35,22 +36,41 @@ public class MainActivity extends Activity {
         WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(false);settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setDefaultTextEncodingName("UTF-8");settings.setTextZoom(100);
         web.setWebViewClient(new WebViewClient(){@Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return true;} @Override public void onPageFinished(WebView v,String u){emit("voice",voiceMessage);}});
         web.addJavascriptInterface(new Bridge(),"Reader");web.loadUrl("file:///android_asset/index.html");
+        IntentFilter noisyFilter=new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+        if(Build.VERSION.SDK_INT>=33)registerReceiver(noisyReceiver,noisyFilter,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(noisyReceiver,noisyFilter);
+        initTts();
+    }
+    void initTts(){
+        voiceReady=false;voiceMessage="한국어 음성 확인 중…";emit("voice",voiceMessage);
+        if(tts!=null){tts.stop();tts.shutdown();tts=null;}
         tts=new TextToSpeech(this,status->{
-            if(closed)return;
-            if(status==TextToSpeech.SUCCESS){
-                Set<Voice> voices=tts.getVoices();Voice chosen=null;
-                if(voices!=null)for(Voice voice:voices){if(voice.getLocale().getLanguage().equals("ko")&&!voice.isNetworkConnectionRequired()&&!voice.getFeatures().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)){if(chosen==null||voice.getQuality()>chosen.getQuality())chosen=voice;}}
-                if(chosen!=null){tts.setVoice(chosen);voiceReady=true;voiceMessage="한국어 오프라인 음성 준비됨";}
-                else voiceMessage="한국어 오프라인 음성을 설치한 뒤 앱을 다시 열어주십시오.";
-                tts.setOnUtteranceProgressListener(new UtteranceProgressListener(){public void onStart(String id){}public void onDone(String id){emit("spoken",id);}public void onError(String id){emit("speechError","낭독하지 못했습니다. 음성 설정을 확인하십시오.");}});
-            }else voiceMessage="음성 엔진이 없습니다. 기기의 TTS 설정을 확인하십시오.";
+            if(closed||tts==null)return;
+            if(status!=TextToSpeech.SUCCESS){voiceMessage="음성 엔진을 시작하지 못했습니다. 기기의 TTS 설정을 확인하십시오.";emit("voice",voiceMessage);return;}
+            tts.setOnUtteranceProgressListener(new UtteranceProgressListener(){public void onStart(String id){}public void onDone(String id){emit("spoken",id);}public void onError(String id){emit("speechError","낭독하지 못했습니다. 음성 설정을 확인하십시오.");}});
+            Voice chosen=null;Set<Voice> voices=tts.getVoices();
+            if(voices!=null)for(Voice voice:voices){
+                Set<String> features=voice.getFeatures();boolean installed=features==null||!features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED);
+                if("ko".equals(voice.getLocale().getLanguage())&&!voice.isNetworkConnectionRequired()&&installed&&(chosen==null||voice.getQuality()>chosen.getQuality()))chosen=voice;
+            }
+            String engine=tts.getDefaultEngine();String engineLabel=engine==null?"기본 TTS 엔진":engine;
+            if(chosen!=null&&tts.setVoice(chosen)==TextToSpeech.SUCCESS){
+                voiceReady=true;voiceMessage="한국어 오프라인 음성 준비됨 · "+engineLabel+" · "+chosen.getName();
+            }else{
+                int language=tts.setLanguage(Locale.KOREA);
+                if(language==TextToSpeech.LANG_MISSING_DATA)voiceMessage="한국어 음성 데이터가 설치되지 않았습니다. 기기 음성 설정에서 설치하십시오.";
+                else if(language==TextToSpeech.LANG_NOT_SUPPORTED)voiceMessage="현재 TTS 엔진은 한국어를 지원하지 않습니다. 기본 음성 엔진을 변경하십시오.";
+                else if(language>=TextToSpeech.LANG_AVAILABLE){voiceReady=true;voiceMessage="한국어 음성 사용 가능 · "+engineLabel+" · 오프라인 여부는 비행기 모드에서 확인하십시오.";}
+                else voiceMessage="한국어 음성을 선택하지 못했습니다. 기기 음성 설정을 확인하십시오.";
+            }
             emit("voice",voiceMessage);
         });
+    }
     }
     void emit(String event,String data){main.post(()->{if(!closed)web.evaluateJavascript("window.nativeEvent && window.nativeEvent("+JSONObject.quote(event)+","+JSONObject.quote(data)+")",null);});}
     void pause(){if(tts!=null)tts.stop();audio.abandonAudioFocusRequest(focus);getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);emit("paused","");}
     @Override protected void onPause(){pause();super.onPause();}
-    @Override protected void onDestroy(){closed=true;if(tts!=null){tts.stop();tts.shutdown();}worker.shutdownNow();web.removeJavascriptInterface("Reader");web.destroy();super.onDestroy();}
+    @Override protected void onResume(){super.onResume();if(returningFromSpeechSettings){returningFromSpeechSettings=false;main.postDelayed(this::initTts,500);}}
+    @Override protected void onDestroy(){closed=true;try{unregisterReceiver(noisyReceiver);}catch(Exception ignored){}if(tts!=null){tts.stop();tts.shutdown();}worker.shutdownNow();web.removeJavascriptInterface("Reader");web.destroy();super.onDestroy();}
     @Override public void onConfigurationChanged(Configuration c){super.onConfigurationChanged(c);web.requestApplyInsets();}
     @Override public void onBackPressed(){web.evaluateJavascript("window.back && window.back()",null);}
     String readFile(File f)throws Exception{try(InputStream in=new FileInputStream(f)){return new String(BookParser.read(in,40_000_000),java.nio.charset.StandardCharsets.UTF_8);}}
@@ -73,7 +93,8 @@ public class MainActivity extends Activity {
             tts.setSpeechRate(Math.max(.5f,Math.min(1.8f,rate)));getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             int result=tts.speak(spoken,TextToSpeech.QUEUE_FLUSH,null,id);if(result==TextToSpeech.ERROR)emit("speechError","음성 재생 요청에 실패했습니다.");
         });}
-        @JavascriptInterface public void speechSettings(){main.post(()->{pause();try{startActivity(new Intent("com.android.settings.TTS_SETTINGS"));}catch(Exception e){startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS));}});}
+        @JavascriptInterface public void recheckSpeech(){main.post(()->{pause();initTts();});}
+        @JavascriptInterface public void speechSettings(){main.post(()->{pause();returningFromSpeechSettings=true;try{startActivity(new Intent("com.android.settings.TTS_SETTINGS"));}catch(Exception e){startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS));}});}
         @JavascriptInterface public void pdf(String id,int number){worker.execute(()->{
             try(ParcelFileDescriptor fd=ParcelFileDescriptor.open(bookFile(id,".source"),ParcelFileDescriptor.MODE_READ_ONLY);PdfRenderer pdf=new PdfRenderer(fd)){
                 int page=Math.max(0,Math.min(number,pdf.getPageCount()-1));
