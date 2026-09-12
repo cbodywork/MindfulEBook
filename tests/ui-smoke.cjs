@@ -7,7 +7,7 @@ const fs=require('fs'),http=require('http'),path=require('path'),assert=require(
  await new Promise(r=>server.once('listening',r));
  const browser=await chromium.launch({...(process.argv[2]?{executablePath:process.argv[2]}:{}),headless:true,args:['--no-sandbox']});
  const page=await browser.newPage({viewport:{width:1280,height:800}});const errors=[];page.on('pageerror',e=>errors.push(String(e)));
- await page.addInitScript(()=>{window.__says=[];window.Reader={state:()=>localStorage.getItem('testState')||'{}',save:s=>localStorage.setItem('testState',s),catalog:()=> '[]',stop:()=>{},say:(...a)=>window.__says.push(a),pick:()=>{},speechSettings:()=>{},open:()=>{},remove:()=>{},pdf:()=>{}};});
+ await page.addInitScript(()=>{window.__says=[];window.Reader={state:()=>localStorage.getItem('testState')||'{}',save:s=>localStorage.setItem('testState',s),catalog:()=> '[]',stop:()=>{},say:(...a)=>window.__says.push(a),pick:()=>{},speechSettings:()=>{},recheckSpeech:()=>{window.__rechecks=(window.__rechecks||0)+1;},open:()=>{},remove:()=>{},pdf:()=>{}};});
  await page.goto('http://127.0.0.1:'+server.address().port);await page.locator('article p').first().waitFor();
  assert.equal(await page.locator('#bookTitle').innerText(),'한 문장에 머무르는 시간');
  assert(await page.locator('#sidebar').isVisible());
@@ -17,7 +17,7 @@ const fs=require('fs'),http=require('http'),path=require('path'),assert=require(
  await page.evaluate(()=>window.nativeEvent('spoken',window.__says.at(-1)[1]));assert.equal(await page.locator('#location').innerText(),'4 / 11 문단');
  await page.locator('#play').click();await page.evaluate(()=>window.nativeEvent('spoken',window.__says[0][1]));assert.equal(await page.locator('#location').innerText(),'4 / 11 문단');
  await page.locator('#searchBtn').click();await page.locator('#query').fill('첫 숟가락');assert.match(await page.locator('#searchCount').innerText(),/1개/);await page.locator('#results button').click();assert.equal(await page.locator('#location').innerText(),'8 / 11 문단');
- await page.locator('#settingBtn').click();await page.locator('#theme').selectOption('dark');await page.locator('#dictionaryBtn').click();await page.locator('#dictionaryText').fill('약선=약썬\nTTS=티티에스');await page.locator('#dictionarySave').click();await page.locator('[data-close=settings]').click();
+ await page.locator('#settingBtn').click();await page.locator('#voiceRecheck').click();assert.equal(await page.evaluate(()=>window.__rechecks),1);await page.locator('#theme').selectOption('dark');await page.locator('#dictionaryBtn').click();await page.locator('#dictionaryText').fill('약선=약썬\nTTS=티티에스');await page.locator('#dictionarySave').click();await page.locator('[data-close=settings]').click();
  await page.reload();await page.locator('article p').first().waitFor();assert.equal(await page.locator('body').getAttribute('data-theme'),'dark');assert.equal(await page.locator('#location').innerText(),'8 / 11 문단');assert.match(await page.evaluate(()=>localStorage.getItem('testState')),/약썬/);
  await page.setViewportSize({width:800,height:1280});await page.waitForTimeout(200);assert(!(await page.locator('#sidebar').isVisible()));await page.locator('#shelfToggle').click();assert(await page.locator('#sidebar').isVisible());await page.locator('#shelfToggle').click();
  await page.locator('#settingBtn').click();await page.locator('#theme').selectOption('sepia');await page.locator('[data-close=settings]').click();await page.screenshot({path:path.resolve(__dirname,'../docs/tablet-portrait.png')});
