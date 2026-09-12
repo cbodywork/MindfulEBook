@@ -65,7 +65,6 @@ public class MainActivity extends Activity {
             emit("voice",voiceMessage);
         });
     }
-    }
     void emit(String event,String data){main.post(()->{if(!closed)web.evaluateJavascript("window.nativeEvent && window.nativeEvent("+JSONObject.quote(event)+","+JSONObject.quote(data)+")",null);});}
     void pause(){if(tts!=null)tts.stop();audio.abandonAudioFocusRequest(focus);getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);emit("paused","");}
     @Override protected void onPause(){pause();super.onPause();}
